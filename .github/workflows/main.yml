@@ -126,7 +126,8 @@ jobs:
         SERVICE_NAME=gcp-clouddeploy-gke-template-${ENV_NAME}
         PIPELINE_NAME=${SERVICE_NAME}-pipeline
         IMAGE=us-central1-docker.pkg.dev/${PROJECT_ID}/gcp-clouddeploy-gke-template/gcp-clouddeploy-gke-template:${VERSION}
-        RELEASE_NAME="${SERVICE_NAME}-${VERSION//./-}-$(date +%s)"
+        SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+        RELEASE_NAME="rel-${VERSION//./-}-${SHORT_SHA}"
 
         gcloud deploy releases create ${RELEASE_NAME} \
           --project=${PROJECT_ID} \
