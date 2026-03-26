@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hello World!</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0d0d1a;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .particle {
+            position: absolute;
+            border-radius: 50%;
+            animation: floatParticle linear infinite;
+            opacity: 0.6;
+        }
+
+        @keyframes floatParticle {
+            0% { transform: translateY(110vh) rotate(0deg); opacity: 0; }
+            10% { opacity: 0.6; }
+            90% { opacity: 0.6; }
+            100% { transform: translateY(-10vh) rotate(720deg); opacity: 0; }
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 50px;
+            padding: 0.4rem 1.2rem;
+            font-size: 0.85rem;
+            letter-spacing: 0.05em;
+            margin-bottom: 2rem;
+            backdrop-filter: blur(10px);
+            animation: fadeInDown 0.8s ease forwards;
+        }
+
+        .badge .env {
+            color: #a78bfa;
+            font-weight: 600;
+        }
+
+        .badge .version {
+            color: #60d6fa;
+            font-weight: 600;
+        }
+
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .hello-text {
+            font-size: clamp(3rem, 10vw, 7rem);
+            font-weight: 900;
+            background: linear-gradient(135deg, #a78bfa, #60d6fa, #f472b6, #a78bfa);
+            background-size: 300% 300%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradientShift 4s ease infinite, floatText 3s ease-in-out infinite;
+            letter-spacing: -0.02em;
+            line-height: 1.1;
+            margin-bottom: 1rem;
+        }
+
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        @keyframes floatText {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-12px); }
+        }
+
+        .subtitle {
+            font-size: clamp(1rem, 3vw, 1.4rem);
+            color: rgba(255,255,255,0.5);
+            margin-bottom: 3rem;
+            animation: fadeInUp 1s ease 0.3s forwards;
+            opacity: 0;
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 0.5; transform: translateY(0); }
+        }
+
+        .icon-wrapper {
+            margin-bottom: 2rem;
+            animation: fadeInUp 1s ease 0.1s forwards;
+            opacity: 0;
+        }
+
+        .gopher-icon {
+            font-size: 5rem;
+            display: inline-block;
+            animation: spin 8s linear infinite;
+            filter: drop-shadow(0 0 20px rgba(167,139,250,0.5));
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg) scale(1); }
+            25% { transform: rotate(90deg) scale(1.1); }
+            50% { transform: rotate(180deg) scale(1); }
+            75% { transform: rotate(270deg) scale(1.1); }
+            100% { transform: rotate(360deg) scale(1); }
+        }
+
+        .glow-ring {
+            position: relative;
+            display: inline-block;
+        }
+
+        .glow-ring::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(167,139,250,0.3), transparent 70%);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; }
+            50% { transform: translate(-50%, -50%) scale(1.3); opacity: 0.3; }
+        }
+
+        .card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 1.5rem 2.5rem;
+            backdrop-filter: blur(20px);
+            animation: fadeInUp 1s ease 0.5s forwards;
+            opacity: 0;
+            margin-bottom: 3rem;
+        }
+
+        .card p {
+            color: rgba(255,255,255,0.7);
+            font-size: 1rem;
+            line-height: 1.6;
+        }
+
+        .card code {
+            background: rgba(167,139,250,0.2);
+            color: #a78bfa;
+            padding: 0.2em 0.5em;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        footer {
+            position: fixed;
+            bottom: 1.5rem;
+            left: 0;
+            right: 0;
+            text-align: center;
+            color: rgba(255,255,255,0.25);
+            font-size: 0.8rem;
+            letter-spacing: 0.05em;
+            animation: fadeInUp 1s ease 0.8s forwards;
+            opacity: 0;
+        }
+
+        footer span {
+            color: rgba(167,139,250,0.6);
+        }
+    </style>
+</head>
+<body>
+    <div class="particles" id="particles"></div>
+
+    <div class="container">
+        <div class="badge">
+            env: <span class="env">{{.Environment}}</span> &nbsp;|&nbsp; version: <span class="version">{{.Version}}</span>
+        </div>
+
+        <div class="icon-wrapper">
+            <div class="glow-ring">
+                <span class="gopher-icon">&#x1F9E0;</span>
+            </div>
+        </div>
+
+        <h1 class="hello-text" id="greeting">Loading...</h1>
+        <p class="subtitle">A Go service running on Google Kubernetes Engine</p>
+
+        <div class="card">
+            <p>Try <code>GET /api/hello</code> or <code>GET /health</code></p>
+        </div>
+    </div>
+
+    <footer>Powered by <span>Go</span> &amp; <span>GCP GKE + Cloud Deploy</span></footer>
+
+    <script>
+        (function() {
+            var container = document.getElementById('particles');
+            var colors = ['#a78bfa', '#60d6fa', '#f472b6', '#34d399', '#fbbf24'];
+            var sizes = [4, 6, 8, 10, 12];
+            for (var i = 0; i < 30; i++) {
+                var p = document.createElement('div');
+                p.className = 'particle';
+                var size = sizes[Math.floor(Math.random() * sizes.length)];
+                p.style.width = size + 'px';
+                p.style.height = size + 'px';
+                p.style.left = Math.random() * 100 + '%';
+                p.style.background = colors[Math.floor(Math.random() * colors.length)];
+                p.style.animationDuration = (8 + Math.random() * 12) + 's';
+                p.style.animationDelay = (Math.random() * 10) + 's';
+                container.appendChild(p);
+            }
+        })();
+
+        (function() {
+            fetch('/api/hello')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    document.getElementById('greeting').textContent = data.message;
+                })
+                .catch(function() {
+                    document.getElementById('greeting').textContent = 'Hello World!';
+                });
+        })();
+    </script>
+</body>
+</html>
