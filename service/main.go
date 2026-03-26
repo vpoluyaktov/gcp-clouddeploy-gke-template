@@ -25,7 +25,11 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to initialize Firestore: %v", err)
 		}
-		defer fs.Close()
+		defer func() {
+			if err := fs.Close(); err != nil {
+				log.Printf("Error closing Firestore: %v", err)
+			}
+		}()
 		st = fs
 		log.Printf("Firestore connected: project=%s database=%s", cfg.ProjectID, cfg.FirestoreDatabaseName)
 	} else {

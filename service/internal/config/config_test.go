@@ -1,16 +1,15 @@
 package config
 
 import (
-	"os"
 	"testing"
 )
 
 func TestLoadDefaults(t *testing.T) {
-	os.Unsetenv("PORT")
-	os.Unsetenv("APP_VERSION")
-	os.Unsetenv("ENVIRONMENT")
-	os.Unsetenv("GCP_PROJECT_ID")
-	os.Unsetenv("FIRESTORE_DATABASE_NAME")
+	t.Setenv("PORT", "")
+	t.Setenv("APP_VERSION", "")
+	t.Setenv("ENVIRONMENT", "")
+	t.Setenv("GCP_PROJECT_ID", "")
+	t.Setenv("FIRESTORE_DATABASE_NAME", "")
 
 	cfg := Load()
 
@@ -32,18 +31,11 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 func TestLoadFromEnv(t *testing.T) {
-	os.Setenv("PORT", "9090")
-	os.Setenv("APP_VERSION", "1.2.3")
-	os.Setenv("ENVIRONMENT", "staging")
-	os.Setenv("GCP_PROJECT_ID", "my-project")
-	os.Setenv("FIRESTORE_DATABASE_NAME", "my-db")
-	defer func() {
-		os.Unsetenv("PORT")
-		os.Unsetenv("APP_VERSION")
-		os.Unsetenv("ENVIRONMENT")
-		os.Unsetenv("GCP_PROJECT_ID")
-		os.Unsetenv("FIRESTORE_DATABASE_NAME")
-	}()
+	t.Setenv("PORT", "9090")
+	t.Setenv("APP_VERSION", "1.2.3")
+	t.Setenv("ENVIRONMENT", "staging")
+	t.Setenv("GCP_PROJECT_ID", "my-project")
+	t.Setenv("FIRESTORE_DATABASE_NAME", "my-db")
 
 	cfg := Load()
 
