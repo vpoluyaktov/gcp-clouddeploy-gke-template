@@ -14,8 +14,8 @@ FROM alpine:latest
 
 RUN apk add --no-cache ca-certificates tzdata
 
-RUN addgroup -S rdapp && adduser -S rdapp -G rdapp
-USER rdapp
+RUN addgroup -g 1001 -S rdapp && adduser -u 1001 -S rdapp -G rdapp
+USER 1001
 
 WORKDIR /app
 
