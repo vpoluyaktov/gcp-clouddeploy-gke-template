@@ -43,3 +43,8 @@ output "clouddeploy_pipeline_name" {
   description = "Cloud Deploy pipeline name"
   value       = google_clouddeploy_delivery_pipeline.pipeline.name
 }
+
+output "gke_lb_ip" {
+  description = "Static IP reserved for the GKE LoadBalancer"
+  value       = google_compute_address.gke_lb_ip.address
+}

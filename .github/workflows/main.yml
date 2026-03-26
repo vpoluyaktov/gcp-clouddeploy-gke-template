@@ -96,12 +96,14 @@ jobs:
         echo "Building version: $VERSION"
 
     - name: Deploy infrastructure with Terraform
+      id: terraform
       run: |
         cd terraform
         cp ${{ steps.env.outputs.ENV_DIR }}/backend.tf backend.tf
         terraform init
         terraform plan -var-file="${{ steps.env.outputs.VAR_FILE }}" -var="image_tag=v${{ steps.version.outputs.VERSION }}"
         terraform apply -var-file="${{ steps.env.outputs.VAR_FILE }}" -var="image_tag=v${{ steps.version.outputs.VERSION }}" -auto-approve
+        echo "STATIC_IP=$(terraform output -raw gke_lb_ip)" >> $GITHUB_OUTPUT
 
     - name: Configure Docker for Artifact Registry
       run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
@@ -132,6 +134,7 @@ jobs:
         sed -i "s|serviceAccountName: gcp-clouddeploy-gke-template|serviceAccountName: ${SERVICE_NAME}|g" k8s/deployment.yaml
         sed -i "s|name: gcp-clouddeploy-gke-template|name: ${SERVICE_NAME}|g" k8s/service-account.yaml
         sed -i "s|GCP_SERVICE_ACCOUNT_VALUE|gke-tpl-${TF_ENV}@${PROJECT_ID}.iam.gserviceaccount.com|g" k8s/service-account.yaml
+        sed -i "s|STATIC_IP_VALUE|${{ steps.terraform.outputs.STATIC_IP }}|g" k8s/service.yaml
 
     - name: Create Cloud Deploy release
       run: |
