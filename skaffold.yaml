@@ -16,6 +16,7 @@ profiles:
             chartPath: helm
             valuesFiles:
               - helm/values-staging.yaml
+              - helm/values-dynamic.yaml
   - name: production
     deploy:
       helm:
@@ -24,3 +25,4 @@ profiles:
             chartPath: helm
             valuesFiles:
               - helm/values-production.yaml
+              - helm/values-dynamic.yaml

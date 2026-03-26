@@ -124,16 +124,8 @@ jobs:
       run: |
         VERSION=v${{ steps.version.outputs.VERSION }}
         STATIC_IP=${{ steps.terraform.outputs.STATIC_IP }}
-        ENV_NAME=${{ steps.env.outputs.ENV_NAME }}
-        if [ "${ENV_NAME}" == "prod" ]; then TF_ENV="production"; else TF_ENV="staging"; fi
-        VALUES_FILE="helm/values-${TF_ENV}.yaml"
-        # Append dynamic values that are only known at build time
-        echo "" >> ${VALUES_FILE}
-        echo "# Dynamic values injected by CI" >> ${VALUES_FILE}
-        echo "app:" >> ${VALUES_FILE}
-        echo "  version: \"${VERSION}\"" >> ${VALUES_FILE}
-        echo "service:" >> ${VALUES_FILE}
-        echo "  staticIP: \"${STATIC_IP}\"" >> ${VALUES_FILE}
+        printf 'app:\n  version: "%s"\nservice:\n  staticIP: "%s"\n' "${VERSION}" "${STATIC_IP}" > helm/values-dynamic.yaml
+        cat helm/values-dynamic.yaml
 
     - name: Create Cloud Deploy release
       run: |
