@@ -1,0 +1,43 @@
+# Default values for gcp-clouddeploy-gke-template
+# Override per environment in values-staging.yaml / values-production.yaml
+
+replicaCount: 2
+
+service:
+  type: LoadBalancer
+  port: 80
+  targetPort: 8080
+  staticIP: ""
+
+serviceAccount:
+  name: gcp-clouddeploy-gke-template
+  gcpServiceAccount: ""
+
+app:
+  port: "8080"
+  environment: ""
+  version: ""
+  projectId: ""
+  firestoreDatabaseName: gcp-clouddeploy-gke-template
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+probes:
+  liveness:
+    path: /health
+    initialDelaySeconds: 5
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    path: /health
+    initialDelaySeconds: 3
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3

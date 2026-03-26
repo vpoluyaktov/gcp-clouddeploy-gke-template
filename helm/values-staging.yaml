@@ -1,0 +1,9 @@
+# Staging environment values
+app:
+  environment: staging
+  projectId: dfh-stage-id
+  firestoreDatabaseName: gcp-clouddeploy-gke-template
+
+serviceAccount:
+  name: gcp-clouddeploy-gke-template-stage
+  gcpServiceAccount: gke-tpl-staging@dfh-stage-id.iam.gserviceaccount.com

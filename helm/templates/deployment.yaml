@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gcp-clouddeploy-gke-template
+  labels:
+    app: gcp-clouddeploy-gke-template
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: gcp-clouddeploy-gke-template
+  template:
+    metadata:
+      labels:
+        app: gcp-clouddeploy-gke-template
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      containers:
+        - name: gcp-clouddeploy-gke-template
+          image: gcp-clouddeploy-gke-template
+          ports:
+            - containerPort: {{ .Values.app.port | int }}
+              protocol: TCP
+          env:
+            - name: PORT
+              value: {{ .Values.app.port | quote }}
+            - name: ENVIRONMENT
+              value: {{ .Values.app.environment | quote }}
+            - name: APP_VERSION
+              value: {{ .Values.app.version | quote }}
+            - name: GCP_PROJECT_ID
+              value: {{ .Values.app.projectId | quote }}
+            - name: FIRESTORE_DATABASE_NAME
+              value: {{ .Values.app.firestoreDatabaseName | quote }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: {{ .Values.app.port | int }}
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: {{ .Values.app.port | int }}
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          resources:
+            requests:
+              cpu: {{ .Values.resources.requests.cpu | quote }}
+              memory: {{ .Values.resources.requests.memory | quote }}
+            limits:
+              cpu: {{ .Values.resources.limits.cpu | quote }}
+              memory: {{ .Values.resources.limits.memory | quote }}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false

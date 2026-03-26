@@ -1,0 +1,9 @@
+# Production environment values
+app:
+  environment: production
+  projectId: dfh-prod-id
+  firestoreDatabaseName: gcp-clouddeploy-gke-template
+
+serviceAccount:
+  name: gcp-clouddeploy-gke-template-prod
+  gcpServiceAccount: gke-tpl-production@dfh-prod-id.iam.gserviceaccount.com

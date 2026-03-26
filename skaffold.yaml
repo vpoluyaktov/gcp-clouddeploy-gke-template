@@ -2,15 +2,25 @@ apiVersion: skaffold/v4beta7
 kind: Config
 metadata:
   name: gcp-clouddeploy-gke-template
-manifests:
-  rawYaml:
-    - k8s/service-account.yaml
-    - k8s/deployment.yaml
-    - k8s/service.yaml
 deploy:
-  kubectl: {}
+  helm:
+    releases:
+      - name: gcp-clouddeploy-gke-template
+        chartPath: helm
 profiles:
   - name: staging
-    # Used by Cloud Deploy for the staging environment
+    deploy:
+      helm:
+        releases:
+          - name: gcp-clouddeploy-gke-template
+            chartPath: helm
+            valuesFiles:
+              - helm/values-staging.yaml
   - name: production
-    # Used by Cloud Deploy for the production environment
+    deploy:
+      helm:
+        releases:
+          - name: gcp-clouddeploy-gke-template
+            chartPath: helm
+            valuesFiles:
+              - helm/values-production.yaml
