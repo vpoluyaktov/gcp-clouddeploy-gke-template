@@ -8,15 +8,14 @@
 
 ## Overview
 
-A production-ready Go HTTP service template deployed to Google Kubernetes Engine (GKE) via Cloud Build and Cloud Deploy with multi-environment CI/CD. It provides:
+A production-ready Go HTTP service template deployed to Google Kubernetes Engine (GKE) via Cloud Deploy with multi-environment CI/CD. It provides:
 
 - A **Web UI** (Go `html/template` with embedded HTML/CSS/JS) that dynamically fetches content from the API
 - A **JSON API** with health check and application endpoints
 - A **Firestore persistence layer** for storing and fetching dynamic content
 - **Terraform** infrastructure-as-code for GKE, Cloud Deploy, Artifact Registry, Firestore, and IAM provisioning
-- **Cloud Build** for building Docker images and triggering deployments
-- **Cloud Deploy** for progressive delivery to staging and production GKE clusters
-- **GitHub Actions** CI/CD for running tests on push/PR (build and deploy handled by Cloud Build + Cloud Deploy)
+- **Cloud Deploy** for progressive delivery to GKE clusters
+- **GitHub Actions** CI/CD with branch-based test, build, Terraform apply, and Cloud Deploy release creation
 
 This repo is designed to be cloned and adapted for new Web UI / Go API / GKE projects.
 
@@ -62,7 +61,6 @@ gcp-clouddeploy-gke-template/
 │   ├── deployment.yaml                # Deployment with env vars, health probes, resource limits
 │   └── service.yaml                   # LoadBalancer Service exposing port 80 → 8080
 │
-├── cloudbuild.yaml                    # Cloud Build config: build image → push to AR → create Cloud Deploy release
 ├── skaffold.yaml                      # Skaffold config for Cloud Deploy rendering
 │
 ├── terraform/                         # Shared Terraform modules (used by all environments)
@@ -70,13 +68,12 @@ gcp-clouddeploy-gke-template/
 │   ├── variables.tf                   # Input variables (project_id, region, cluster_name, etc.)
 │   ├── versions.tf                    # Terraform >= 1.0, google provider ~> 5.0
 │   ├── gke.tf                         # GKE Autopilot cluster + node config
-│   ├── iam.tf                         # Runtime SA, Cloud Build SA roles, Cloud Deploy SA roles
+│   ├── iam.tf                         # Runtime SA + Cloud Deploy execution SA roles
 │   ├── dns.tf                         # A record in Cloud DNS pointing to GKE ingress IP
 │   ├── firestore.tf                   # Firestore database + seed greeting document
 │   ├── apis.tf                        # Enables required GCP APIs
 │   ├── artifact-registry.tf           # Artifact Registry Docker repository
-│   ├── cloudbuild.tf                  # Cloud Build trigger (connected to GitHub repo)
-│   ├── clouddeploy.tf                 # Cloud Deploy pipeline + stage/prod targets
+│   ├── clouddeploy.tf                 # Cloud Deploy pipeline + target
 │   ├── outputs.tf                     # Outputs: cluster_endpoint, service_account_email, etc.
 │   ├── stage/
 │   │   ├── backend.tf                 # GCS backend: bucket=dfh-stage-tfstate
@@ -87,7 +84,7 @@ gcp-clouddeploy-gke-template/
 │
 └── .github/
     └── workflows/
-        └── main.yml                   # Test workflow: runs Go tests on push/PR
+        └── main.yml                   # Single workflow: test → build → deploy (branch-based)
 ```
 
 ---
@@ -231,33 +228,16 @@ Stage 2 — Runtime (alpine:latest):
 
 ---
 
-## Cloud Build
-
-### `cloudbuild.yaml`
-
-Cloud Build is triggered by pushes to `main` or `stage` branches (configured via Terraform Cloud Build trigger). The build pipeline:
-
-1. **Compute version** — reads `VERSION` file + commit count to produce `MAJOR.MINOR.PATCH`
-2. **Build Docker image** — multi-stage build, tagged with version and `latest`
-3. **Push to Artifact Registry** — pushes both tags to the project's AR Docker repo
-4. **Create Cloud Deploy release** — triggers a release on the Cloud Deploy pipeline, which rolls out to the appropriate GKE target
-
-```
-git push → Cloud Build trigger → build image → push to AR → create Cloud Deploy release → deploy to GKE
-```
-
----
-
 ## Cloud Deploy
 
 ### Pipeline Architecture
 
-Cloud Deploy manages progressive delivery with two targets:
+Cloud Deploy manages progressive delivery with per-environment targets:
 
 | Target | GKE Cluster | Triggered By |
 |--------|-------------|-------------|
-| **staging** | GKE cluster in `dfh-stage-id` | Automatic on release creation (from stage branch build) |
-| **production** | GKE cluster in `dfh-prod-id` | Automatic on release creation (from main branch build) |
+| **staging** | GKE cluster in `dfh-stage-id` | GitHub Actions creates a Cloud Deploy release after building and pushing the image (stage branch) |
+| **production** | GKE cluster in `dfh-prod-id` | GitHub Actions creates a Cloud Deploy release after building and pushing the image (main branch) |
 
 Each environment has its own Cloud Deploy pipeline with a single target, keeping staging and production fully isolated in separate GCP projects.
 
@@ -266,7 +246,13 @@ Each environment has its own Cloud Deploy pipeline with a single target, keeping
 Cloud Deploy uses Skaffold for rendering Kubernetes manifests:
 - `skaffold.yaml` at repo root defines the deploy configuration
 - Uses `kubectl` deployer to apply manifests from `k8s/`
-- Image substitution replaces the placeholder image reference with the actual Artifact Registry image
+- Image substitution replaces the placeholder `IMAGE_TAG` reference with the actual Artifact Registry image
+
+### Deployment Flow
+
+```
+git push → GitHub Actions (test → build image → push to AR → terraform apply → create Cloud Deploy release) → Cloud Deploy rolls out to GKE
+```
 
 ---
 
@@ -286,9 +272,8 @@ Cloud Deploy uses Skaffold for rendering Kubernetes manifests:
 | `google_container_cluster` | `gke.tf` | GKE Autopilot cluster |
 | `google_artifact_registry_repository` | `artifact-registry.tf` | Docker repository for container images |
 | `google_service_account` (runtime) | `iam.tf` | Runtime SA for GKE workloads with logging + Firestore roles |
-| `google_service_account` (cloudbuild) | `iam.tf` | Cloud Build SA with build, deploy, and GKE permissions |
-| `google_project_iam_member` (various) | `iam.tf` | Role bindings for runtime and Cloud Build SAs |
-| `google_cloudbuild_trigger` | `cloudbuild.tf` | Cloud Build trigger connected to GitHub repo |
+| `google_service_account` (clouddeploy execution) | `clouddeploy.tf` | Cloud Deploy execution SA with GKE + AR + logging permissions |
+| `google_project_iam_member` (various) | `iam.tf`, `clouddeploy.tf` | Role bindings for runtime and Cloud Deploy execution SAs |
 | `google_clouddeploy_delivery_pipeline` | `clouddeploy.tf` | Cloud Deploy pipeline with target |
 | `google_clouddeploy_target` | `clouddeploy.tf` | Cloud Deploy GKE target |
 | `google_firestore_database` | `firestore.tf` | Firestore Native mode database |
@@ -321,9 +306,6 @@ Cloud Deploy uses Skaffold for rendering Kubernetes manifests:
 | `custom_domain` | string | — | Full custom domain for the service (required) |
 | `firestore_database_name` | string | — | Firestore database name (required) |
 | `firestore_location` | string | `nam5` | Firestore database location |
-| `github_repo_owner` | string | — | GitHub repo owner for Cloud Build trigger (required) |
-| `github_repo_name` | string | — | GitHub repo name for Cloud Build trigger (required) |
-| `branch_name` | string | — | Branch name that triggers Cloud Build (required) |
 | `ar_repository_name` | string | — | Artifact Registry repository name (required) |
 
 ### Environments
@@ -339,43 +321,60 @@ Cloud Deploy uses Skaffold for rendering Kubernetes manifests:
 
 ### Overview
 
-Unlike the Cloud Run template (which uses GitHub Actions for the entire build-and-deploy pipeline), this template splits responsibilities:
+Like the Cloud Run template, this template uses GitHub Actions for the entire CI/CD pipeline. GitHub Actions handles testing, building, infrastructure provisioning (Terraform), and deployment (Cloud Deploy release creation).
 
 | Concern | Tool | Description |
 |---------|------|-------------|
 | **Testing** | GitHub Actions | Runs Go tests, vet, and lint on push/PR |
-| **Building** | Cloud Build | Builds Docker image, pushes to Artifact Registry |
-| **Deploying** | Cloud Deploy | Creates a release, rolls out to GKE target |
+| **Building** | GitHub Actions | Builds Docker image, pushes to Artifact Registry |
+| **Infrastructure** | GitHub Actions + Terraform | Creates/updates GKE cluster, Cloud Deploy pipeline, Firestore, IAM, etc. |
+| **Deploying** | GitHub Actions + Cloud Deploy | Creates a Cloud Deploy release, which rolls out to GKE target |
 
-### GitHub Actions Workflow: `.github/workflows/main.yml`
+### Workflow: `.github/workflows/main.yml`
 
-Single workflow for running tests only. Build and deploy are handled entirely by Cloud Build + Cloud Deploy.
+Single workflow file with branch-based environment determination.
 
 **Triggers:**
 - Push to `main` or `stage`
 - Pull request to `main` or `stage`
 
-**Job: `test`**
+### Job 1: `test` (runs on all triggers)
 
 | Step | Tool | Description |
 |------|------|-------------|
-| Checkout | `actions/checkout@v4` | Clone repo |
-| Set up Go | `actions/setup-go@v4` | Go 1.21 |
-| Cache modules | `actions/cache@v3` | Cache `~/go/pkg/mod` |
+| Checkout | `actions/checkout@v5` | Clone repo |
+| Set up Go | `actions/setup-go@v5` | Go 1.21 |
+| Cache modules | `actions/cache@v4` | Cache `~/go/pkg/mod` |
 | Install deps | `go mod download` | In `./service` |
 | Run tests | `go test ./...` | In `./service` |
 | Run vet | `go vet ./...` | In `./service` |
-| Lint | `golangci/golangci-lint-action@v4` | Latest version |
+| Lint | `golangci/golangci-lint-action@v7` | Latest version |
 
-### Cloud Build Pipeline: `cloudbuild.yaml`
+### Job 2: `build-and-deploy` (push only, not PRs)
 
-Triggered by Cloud Build trigger (Terraform-managed) on push to the configured branch.
+**Condition:** `github.event_name == 'push'` AND branch is `main` or `stage`
+
+**Environment determination:**
+
+| Branch  | `ENV_NAME` | `ENV_DIR` | `VAR_FILE`          | `PROJECT_ID`   |
+|---------|------------|-----------|---------------------|----------------|
+| `main`  | `prod`     | `prod`    | `prod/prod.tfvars`  | `dfh-prod-id`  |
+| `stage` | `stage`    | `stage`   | `stage/stage.tfvars`| `dfh-stage-id` |
 
 **Steps:**
-1. Compute version from `VERSION` file + commit count
-2. Build Docker image with version tag + `latest`
-3. Push both tags to Artifact Registry
-4. Create Cloud Deploy release targeting the environment's pipeline
+1. Checkout (full history for commit count)
+2. Determine environment from branch
+3. Authenticate to GCP (environment-specific SA key)
+4. Set up gcloud CLI
+5. Set up Terraform 1.5.0
+6. Compute version: `<MAJOR.MINOR from VERSION file>.<commit_count>` (e.g., `1.0.42`)
+7. Configure Docker for Artifact Registry
+8. Build Docker image with version tag + `latest`
+9. Push both tags to Artifact Registry
+10. Copy `<env>/backend.tf` → terraform root, run `terraform init/plan/apply`
+11. Create Cloud Deploy release via `gcloud deploy releases create`
+12. Wait for rollout, get cluster credentials, run smoke test
+13. Notify deployment result
 
 ### Cloud Deploy Pipeline
 
@@ -384,7 +383,7 @@ Each environment has its own Cloud Deploy delivery pipeline with a single GKE ta
 - **Staging pipeline:** Targets the staging GKE cluster in `dfh-stage-id`
 - **Production pipeline:** Targets the production GKE cluster in `dfh-prod-id`
 
-Releases are created by Cloud Build after a successful image push.
+Releases are created by GitHub Actions after a successful image push and Terraform apply.
 
 ### Required GitHub Secrets
 
@@ -399,14 +398,14 @@ There are **three types** of service accounts per environment:
 
 1. **Deploy SA** (`gcp-cloudrun-deploy@<project>.iam.gserviceaccount.com`)
    - Pre-existing in each project
-   - Used for Terraform apply (from GitHub Actions or manual)
+   - Used by GitHub Actions to push images, run Terraform, and create Cloud Deploy releases
    - JSON key stored as a GitHub secret
-   - Requires roles: `artifactregistry.admin`, `cloudbuild.builds.editor`, `clouddeploy.admin`, `container.admin`, `datastore.owner`, `dns.admin`, `iam.serviceAccountAdmin`, `iam.serviceAccountUser`, `logging.logWriter`, `resourcemanager.projectIamAdmin`, `serviceusage.serviceUsageAdmin`, `storage.admin`
+   - Requires roles: `artifactregistry.admin`, `clouddeploy.admin`, `container.admin`, `datastore.owner`, `dns.admin`, `iam.serviceAccountAdmin`, `iam.serviceAccountUser`, `logging.logWriter`, `resourcemanager.projectIamAdmin`, `serviceusage.serviceUsageAdmin`, `storage.admin`
 
-2. **Cloud Build SA** (`cloudbuild-gke-tpl-<environment>@<project>.iam.gserviceaccount.com`)
-   - Created and managed by Terraform (`iam.tf`)
-   - Used by Cloud Build to build images and create Cloud Deploy releases
-   - Has roles: `cloudbuild.builds.builder`, `artifactregistry.writer`, `clouddeploy.releaser`, `logging.logWriter`, `iam.serviceAccountUser`
+2. **Cloud Deploy Execution SA** (`deploy-gke-tpl-<environment>@<project>.iam.gserviceaccount.com`)
+   - Created and managed by Terraform (`clouddeploy.tf`)
+   - Used by Cloud Deploy to render manifests and deploy to GKE
+   - Has roles: `container.developer`, `logging.logWriter`, `storage.objectViewer`, `artifactregistry.reader`
 
 3. **Runtime SA** (`gke-tpl-<environment>@<project>.iam.gserviceaccount.com`)
    - Created and managed by Terraform (`iam.tf`)
@@ -416,7 +415,7 @@ There are **three types** of service accounts per environment:
 ### Versioning
 
 - `VERSION` file contains `MAJOR.MINOR` (e.g., `1.0`)
-- Cloud Build computes full version: `MAJOR.MINOR.<commit_count>` (e.g., `1.0.42`)
+- CI/CD appends commit count as patch: `1.0.<commit_count>`
 - Docker images tagged as `v<version>` (e.g., `v1.0.42`) and `latest`
 - `APP_VERSION` env var is set in the Kubernetes deployment manifest
 
@@ -436,7 +435,7 @@ There are **three types** of service accounts per environment:
 
 6. **Graceful shutdown** — Listens for SIGINT/SIGTERM and drains connections with a 10-second timeout, matching Kubernetes pod termination lifecycle.
 
-7. **Cloud Build + Cloud Deploy** — Build and deploy are handled by GCP-native services, not GitHub Actions. This keeps the CI/CD pipeline within GCP, reduces GitHub Actions minutes, and leverages Cloud Deploy's progressive delivery capabilities.
+7. **GitHub Actions + Cloud Deploy** — GitHub Actions handles the full CI/CD pipeline (test, build, push, Terraform, release creation), while Cloud Deploy handles the actual rollout to GKE. This follows the same pattern as the Cloud Run template, keeping CI/CD in one place while leveraging Cloud Deploy's progressive delivery capabilities.
 
 8. **GKE Autopilot** — Uses Autopilot mode for fully managed node infrastructure. Google handles node scaling, security patches, and resource optimization.
 

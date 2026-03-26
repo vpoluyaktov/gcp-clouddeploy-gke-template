@@ -4,7 +4,7 @@
 > Use this project as a **pattern reference** — do not clone it. Generate new projects from scratch
 > following the patterns documented here and in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-A production-ready template defining the standard patterns for Go HTTP services deployed to Google Kubernetes Engine (GKE) via Cloud Build and Cloud Deploy, with a Web UI, JSON API, Firestore persistence, Terraform infrastructure, and automated CI/CD.
+A production-ready template defining the standard patterns for Go HTTP services deployed to Google Kubernetes Engine (GKE) via Cloud Deploy, with a Web UI, JSON API, Firestore persistence, Terraform infrastructure, and automated CI/CD.
 
 ---
 
@@ -15,10 +15,9 @@ A production-ready template defining the standard patterns for Go HTTP services 
 - **Multi-stage Dockerfile** — small Alpine-based image, non-root user
 - **Firestore persistence** — data stored in and fetched from Cloud Firestore
 - **Kubernetes manifests** for Deployment and LoadBalancer Service
-- **Cloud Build** for building Docker images and triggering Cloud Deploy releases
 - **Cloud Deploy** for progressive delivery to GKE clusters
-- **Terraform** infrastructure-as-code for GKE, Artifact Registry, Cloud Build, Cloud Deploy, Firestore, IAM, DNS, and GCP APIs
-- **GitHub Actions** CI/CD for running tests on push/PR
+- **Terraform** infrastructure-as-code for GKE, Artifact Registry, Cloud Deploy, Firestore, IAM, DNS, and GCP APIs
+- **GitHub Actions** CI/CD pipeline: test, build, push to Artifact Registry, Terraform apply, and Cloud Deploy release creation
 - **Multi-environment** deployment: `stage` branch → staging, `main` branch → production
 - **Separate GCP projects** and service accounts per environment
 
@@ -61,7 +60,6 @@ Create a new empty directory for the application and generate all files followin
 ├── VERSION                            # Contains "1.0"
 ├── ARCHITECTURE.md                    # Architecture reference (adapted for the new app)
 ├── README.md                          # Project README (adapted for the new app)
-├── cloudbuild.yaml                    # Cloud Build pipeline config
 ├── skaffold.yaml                      # Skaffold config for Cloud Deploy
 ├── service/
 │   ├── main.go                        # Entry point (same pattern as template)
@@ -88,13 +86,12 @@ Create a new empty directory for the application and generate all files followin
 │   ├── variables.tf                   # All input variables
 │   ├── versions.tf                    # Terraform >= 1.0, google ~> 5.0
 │   ├── gke.tf                         # GKE Autopilot cluster
-│   ├── iam.tf                         # Runtime SA + Cloud Build SA + role bindings
+│   ├── iam.tf                         # Runtime SA + Workload Identity binding
 │   ├── dns.tf                         # A record in Cloud DNS
 │   ├── firestore.tf                   # Firestore database + seed document
 │   ├── apis.tf                        # Enable required GCP APIs
 │   ├── artifact-registry.tf           # Artifact Registry Docker repo
-│   ├── cloudbuild.tf                  # Cloud Build trigger
-│   ├── clouddeploy.tf                 # Cloud Deploy pipeline + target
+│   ├── clouddeploy.tf                 # Cloud Deploy pipeline + target + execution SA
 │   ├── outputs.tf                     # Terraform outputs
 │   ├── stage/
 │   │   ├── backend.tf                 # GCS backend for staging
@@ -104,7 +101,7 @@ Create a new empty directory for the application and generate all files followin
 │       └── prod.tfvars                # Production variable values
 └── .github/
     └── workflows/
-        └── main.yml                   # Test-only CI pipeline
+        └── main.yml                   # Full CI/CD: test → build → terraform → Cloud Deploy release
 ```
 
 **After generating files**, run:
@@ -131,7 +128,6 @@ When generating each file, read the corresponding template source file to unders
 | `service/go.mod` | `/home/ubuntu/git/gcp-clouddeploy-gke-template/service/go.mod` |
 | `k8s/deployment.yaml` | `/home/ubuntu/git/gcp-clouddeploy-gke-template/k8s/deployment.yaml` |
 | `k8s/service.yaml` | `/home/ubuntu/git/gcp-clouddeploy-gke-template/k8s/service.yaml` |
-| `cloudbuild.yaml` | `/home/ubuntu/git/gcp-clouddeploy-gke-template/cloudbuild.yaml` |
 | `skaffold.yaml` | `/home/ubuntu/git/gcp-clouddeploy-gke-template/skaffold.yaml` |
 | `terraform/*.tf` | `/home/ubuntu/git/gcp-clouddeploy-gke-template/terraform/*.tf` |
 | `.github/workflows/main.yml` | `/home/ubuntu/git/gcp-clouddeploy-gke-template/.github/workflows/main.yml` |
@@ -146,7 +142,7 @@ Replace template-specific values with the new application's values:
 |---------------|-------------|
 | `gcp-clouddeploy-gke-template` (Go module, Docker image, Terraform refs) | `<app-name>` |
 | `gke-tpl` (runtime SA prefix) | Short prefix for `<app-name>` (full SA ID with `-<environment>` suffix must be ≤ 30 chars) |
-| `cloudbuild-gke-tpl` (Cloud Build SA prefix) | Short prefix for `<app-name>` Cloud Build SA |
+| `deploy-gke-tpl` (Cloud Deploy execution SA prefix) | Short prefix for `<app-name>` Cloud Deploy execution SA |
 | `"Hello World!"` greeting and `/api/hello` endpoint | The new application's actual API endpoints and business logic |
 | `greetings/hello` Firestore document | The new application's Firestore collection/document structure |
 | Template UI (gradient text, particles) | The new application's UI design |
@@ -177,9 +173,6 @@ dns_zone_name           = "demo-devops-for-hire-com"
 dns_domain              = "demo.devops-for-hire.com"
 custom_domain           = "<app-name>.stage.demo.devops-for-hire.com"
 firestore_database_name = "<app-name>"
-github_repo_owner       = "<org>"
-github_repo_name        = "<app-name>"
-branch_name             = "stage"
 ar_repository_name      = "<app-name>"
 ```
 
@@ -195,9 +188,6 @@ dns_zone_name           = "demo-devops-for-hire-com"
 dns_domain              = "demo.devops-for-hire.com"
 custom_domain           = "<app-name>.demo.devops-for-hire.com"
 firestore_database_name = "<app-name>"
-github_repo_owner       = "<org>"
-github_repo_name        = "<app-name>"
-branch_name             = "main"
 ar_repository_name      = "<app-name>"
 ```
 
@@ -242,8 +232,8 @@ Each environment uses **three service accounts**:
 
 | SA Type | Naming Convention | Managed By | Purpose |
 |---------|-------------------|------------|---------|
-| **Deploy SA** | `gcp-cloudrun-deploy@<project>.iam.gserviceaccount.com` | Pre-existing in each project | Terraform apply: create/manage all infrastructure |
-| **Cloud Build SA** | `cloudbuild-<sa-prefix>-<env>@<project>.iam.gserviceaccount.com` | Terraform (`iam.tf`) | Cloud Build: build images, push to AR, create Cloud Deploy releases |
+| **Deploy SA** | `gcp-cloudrun-deploy@<project>.iam.gserviceaccount.com` | Pre-existing in each project | GitHub Actions: push images, Terraform apply, create Cloud Deploy releases |
+| **Cloud Deploy Execution SA** | `deploy-<sa-prefix>-<env>@<project>.iam.gserviceaccount.com` | Terraform (`clouddeploy.tf`) | Cloud Deploy: render manifests and deploy to GKE |
 | **Runtime SA** | `<sa-prefix>-<env>@<project>.iam.gserviceaccount.com` | Terraform (`iam.tf`) | GKE pod identity (logging + Firestore access) |
 
 ### Deploy SA Required Roles
@@ -251,7 +241,6 @@ Each environment uses **three service accounts**:
 The deploy SA in each project must have these roles:
 
 - `roles/artifactregistry.admin`
-- `roles/cloudbuild.builds.editor`
 - `roles/clouddeploy.admin`
 - `roles/container.admin`
 - `roles/datastore.owner`
@@ -276,13 +265,12 @@ gh secret set GCP_STAGE_SA_KEY < /path/to/stage-key.json
 gh secret set GCP_PROD_SA_KEY < /path/to/prod-key.json
 ```
 
-### Cloud Build SA Roles (Managed by Terraform)
+### Cloud Deploy Execution SA Roles (Managed by Terraform)
 
-- `roles/cloudbuild.builds.builder`
-- `roles/artifactregistry.writer`
-- `roles/clouddeploy.releaser`
+- `roles/container.developer`
 - `roles/logging.logWriter`
-- `roles/iam.serviceAccountUser`
+- `roles/storage.objectViewer`
+- `roles/artifactregistry.reader`
 
 ### Runtime SA Roles (Managed by Terraform)
 
@@ -308,7 +296,7 @@ The service reads these environment variables at startup:
 ## Versioning
 
 - `VERSION` file at repo root contains `MAJOR.MINOR` (e.g., `1.0`)
-- Cloud Build computes full version: `MAJOR.MINOR.<commit_count>` (e.g., `1.0.42`)
+- CI/CD computes full version: `MAJOR.MINOR.<commit_count>` (e.g., `1.0.42`)
 - Docker images are tagged `v1.0.42` and `latest`
 - Bump `VERSION` when making breaking or feature changes
 
@@ -317,8 +305,8 @@ The service reads these environment variables at startup:
 ## Deployment Flow
 
 ```
-git push origin stage  →  GitHub Actions (test) + Cloud Build (build → push → Cloud Deploy release) → GKE staging
-git push origin main   →  GitHub Actions (test) + Cloud Build (build → push → Cloud Deploy release) → GKE production
+git push origin stage  →  GitHub Actions (test → build → push to AR → terraform apply → Cloud Deploy release) → GKE staging
+git push origin main   →  GitHub Actions (test → build → push to AR → terraform apply → Cloud Deploy release) → GKE production
 ```
 
 | Branch | Environment | GCP Project | Deployed On |
@@ -357,12 +345,11 @@ service/                → Go application code
 service/internal/       → Private packages (config, server, store, templates)
 service/Dockerfile      → Multi-stage Docker build
 k8s/                    → Kubernetes manifests (Deployment, Service)
-cloudbuild.yaml         → Cloud Build pipeline configuration
 skaffold.yaml           → Skaffold config for Cloud Deploy
 terraform/              → Shared Terraform modules
 terraform/stage/        → Staging environment config
 terraform/prod/         → Production environment config
-.github/workflows/      → Test-only CI pipeline
+.github/workflows/      → Full CI/CD pipeline (test + build + deploy)
 VERSION                 → Semantic version (MAJOR.MINOR)
 ARCHITECTURE.md         → Detailed architecture reference
 ```

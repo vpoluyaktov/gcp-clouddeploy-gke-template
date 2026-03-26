@@ -72,21 +72,6 @@ variable "firestore_location" {
   default     = "nam5"
 }
 
-variable "github_repo_owner" {
-  description = "GitHub repository owner (org or user)"
-  type        = string
-}
-
-variable "github_repo_name" {
-  description = "GitHub repository name"
-  type        = string
-}
-
-variable "branch_name" {
-  description = "Branch name that triggers Cloud Build"
-  type        = string
-}
-
 variable "ar_repository_name" {
   description = "Artifact Registry repository name"
   type        = string

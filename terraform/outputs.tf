@@ -14,11 +14,6 @@ output "runtime_service_account_email" {
   value       = google_service_account.runtime.email
 }
 
-output "cloudbuild_service_account_email" {
-  description = "Email of the Cloud Build service account"
-  value       = google_service_account.cloudbuild.email
-}
-
 output "project_id" {
   description = "GCP project ID"
   value       = var.project_id
