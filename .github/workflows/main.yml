@@ -1,10 +1,30 @@
 name: Deploy to GKE
 
 on:
+  # Auto-deploy only when app, infra, or deploy config changes
   push:
     branches: [ main, stage ]
+    paths:
+      - 'service/**'
+      - 'helm/**'
+      - 'terraform/**'
+      - 'skaffold.yaml'
+      - 'Dockerfile'
+      - 'VERSION'
+      - '.github/workflows/**'
   pull_request:
     branches: [ main, stage ]
+  # Manual trigger for on-demand deploys
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+          - prod
+          - stage
 
 jobs:
   test:
@@ -49,7 +69,9 @@ jobs:
   build-and-deploy:
     needs: test
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/stage')
+    if: |
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/stage'))
+      || github.event_name == 'workflow_dispatch'
 
     steps:
     - name: Checkout code
@@ -60,7 +82,16 @@ jobs:
     - name: Determine environment
       id: env
       run: |
-        if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+        # workflow_dispatch uses the input; push uses the branch
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          ENV="${{ github.event.inputs.environment }}"
+        elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
+          ENV="prod"
+        else
+          ENV="stage"
+        fi
+
+        if [ "$ENV" == "prod" ]; then
           echo "ENV_NAME=prod" >> $GITHUB_OUTPUT
           echo "ENV_DIR=prod" >> $GITHUB_OUTPUT
           echo "VAR_FILE=prod/prod.tfvars" >> $GITHUB_OUTPUT
