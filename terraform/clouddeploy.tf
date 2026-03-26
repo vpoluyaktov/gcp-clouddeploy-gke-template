@@ -61,7 +61,7 @@ resource "google_project_iam_member" "clouddeploy_exec_logging" {
 
 resource "google_project_iam_member" "clouddeploy_exec_storage" {
   project = var.project_id
-  role    = "roles/storage.objectViewer"
+  role    = "roles/storage.objectAdmin"
   member  = "serviceAccount:${google_service_account.clouddeploy_execution.email}"
 }
 
