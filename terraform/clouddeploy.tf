@@ -18,7 +18,7 @@ resource "google_clouddeploy_delivery_pipeline" "pipeline" {
 
 # Cloud Deploy GKE target
 resource "google_clouddeploy_target" "target" {
-  name     = "${var.service_name}-${var.environment}"
+  name     = var.cluster_name
   location = var.region
   project  = var.project_id
 
