@@ -95,8 +95,16 @@ jobs:
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         echo "Building version: $VERSION"
 
+    - name: Deploy infrastructure with Terraform
+      run: |
+        cd terraform
+        cp ${{ steps.env.outputs.ENV_DIR }}/backend.tf backend.tf
+        terraform init
+        terraform plan -var-file="${{ steps.env.outputs.VAR_FILE }}" -var="image_tag=v${{ steps.version.outputs.VERSION }}"
+        terraform apply -var-file="${{ steps.env.outputs.VAR_FILE }}" -var="image_tag=v${{ steps.version.outputs.VERSION }}" -auto-approve
+
     - name: Configure Docker for Artifact Registry
-      run: gcloud auth configure-docker ${{ steps.env.outputs.PROJECT_ID }}-docker.pkg.dev --quiet 2>/dev/null || gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+      run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
     - name: Build Docker image
       run: |
@@ -109,14 +117,6 @@ jobs:
       run: |
         docker push us-central1-docker.pkg.dev/${{ steps.env.outputs.PROJECT_ID }}/gcp-clouddeploy-gke-template/gcp-clouddeploy-gke-template:v${{ steps.version.outputs.VERSION }}
         docker push us-central1-docker.pkg.dev/${{ steps.env.outputs.PROJECT_ID }}/gcp-clouddeploy-gke-template/gcp-clouddeploy-gke-template:latest
-
-    - name: Deploy infrastructure with Terraform
-      run: |
-        cd terraform
-        cp ${{ steps.env.outputs.ENV_DIR }}/backend.tf backend.tf
-        terraform init
-        terraform plan -var-file="${{ steps.env.outputs.VAR_FILE }}" -var="image_tag=v${{ steps.version.outputs.VERSION }}"
-        terraform apply -var-file="${{ steps.env.outputs.VAR_FILE }}" -var="image_tag=v${{ steps.version.outputs.VERSION }}" -auto-approve
 
     - name: Create Cloud Deploy release
       run: |
