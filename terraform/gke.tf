@@ -7,6 +7,9 @@ resource "google_container_cluster" "primary" {
   # Autopilot mode — Google manages node pools, scaling, and upgrades
   enable_autopilot = true
 
+  # Allow Terraform to manage cluster lifecycle
+  deletion_protection = false
+
   # Release channel for automatic upgrades
   release_channel {
     channel = "REGULAR"
