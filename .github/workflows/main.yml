@@ -118,6 +118,21 @@ jobs:
         docker push us-central1-docker.pkg.dev/${{ steps.env.outputs.PROJECT_ID }}/gcp-clouddeploy-gke-template/gcp-clouddeploy-gke-template:v${{ steps.version.outputs.VERSION }}
         docker push us-central1-docker.pkg.dev/${{ steps.env.outputs.PROJECT_ID }}/gcp-clouddeploy-gke-template/gcp-clouddeploy-gke-template:latest
 
+    - name: Prepare K8s manifests
+      run: |
+        VERSION=v${{ steps.version.outputs.VERSION }}
+        PROJECT_ID=${{ steps.env.outputs.PROJECT_ID }}
+        ENV_NAME=${{ steps.env.outputs.ENV_NAME }}
+        SERVICE_NAME=gcp-clouddeploy-gke-template-${ENV_NAME}
+        if [ "${ENV_NAME}" == "prod" ]; then TF_ENV="production"; else TF_ENV="staging"; fi
+        sed -i "s|ENVIRONMENT_VALUE|${TF_ENV}|g" k8s/deployment.yaml
+        sed -i "s|APP_VERSION_VALUE|${VERSION}|g" k8s/deployment.yaml
+        sed -i "s|GCP_PROJECT_ID_VALUE|${PROJECT_ID}|g" k8s/deployment.yaml
+        sed -i "s|FIRESTORE_DATABASE_NAME_VALUE|gcp-clouddeploy-gke-template|g" k8s/deployment.yaml
+        sed -i "s|serviceAccountName: gcp-clouddeploy-gke-template|serviceAccountName: ${SERVICE_NAME}|g" k8s/deployment.yaml
+        sed -i "s|name: gcp-clouddeploy-gke-template|name: ${SERVICE_NAME}|g" k8s/service-account.yaml
+        sed -i "s|GCP_SERVICE_ACCOUNT_VALUE|gke-tpl-${TF_ENV}@${PROJECT_ID}.iam.gserviceaccount.com|g" k8s/service-account.yaml
+
     - name: Create Cloud Deploy release
       run: |
         VERSION=v${{ steps.version.outputs.VERSION }}

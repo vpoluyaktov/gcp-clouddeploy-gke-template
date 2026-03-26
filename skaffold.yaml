@@ -4,7 +4,13 @@ metadata:
   name: gcp-clouddeploy-gke-template
 manifests:
   rawYaml:
+    - k8s/service-account.yaml
     - k8s/deployment.yaml
     - k8s/service.yaml
 deploy:
   kubectl: {}
+profiles:
+  - name: staging
+    # Used by Cloud Deploy for the staging environment
+  - name: production
+    # Used by Cloud Deploy for the production environment
