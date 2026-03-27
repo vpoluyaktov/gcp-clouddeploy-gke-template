@@ -1,0 +1,15 @@
+# FrontendConfig — enables HTTP-to-HTTPS redirect on the GKE Ingress.
+#
+# All HTTP (port 80) requests are permanently redirected (301) to HTTPS (port 443).
+# This works together with the ManagedCertificate to ensure all traffic is encrypted.
+#
+# The FrontendConfig name is referenced in the Ingress annotation:
+#   networking.gke.io/v1beta1.FrontendConfig
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: gcp-clouddeploy-gke-template-frontend-config
+spec:
+  redirectToHttps:
+    enabled: true
+    responseCodeName: MOVED_PERMANENTLY_DEFAULT

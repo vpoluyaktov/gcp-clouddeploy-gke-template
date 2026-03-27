@@ -45,6 +45,14 @@ output "clouddeploy_pipeline_name" {
 }
 
 output "gke_lb_ip" {
-  description = "Static IP reserved for the GKE LoadBalancer"
-  value       = google_compute_address.gke_lb_ip.address
+  description = "Global static IP address reserved for the GKE Ingress"
+  value       = google_compute_global_address.gke_ingress_ip.address
+}
+
+# The IP resource NAME is used in the Ingress annotation:
+#   kubernetes.io/ingress.global-static-ip-name
+# This is different from the IP address value — Ingress needs the NAME, not the address.
+output "gke_lb_ip_name" {
+  description = "Name of the global static IP resource (used in Ingress annotation)"
+  value       = google_compute_global_address.gke_ingress_ip.name
 }

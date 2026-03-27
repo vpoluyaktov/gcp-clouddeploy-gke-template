@@ -14,11 +14,12 @@ A production-ready template defining the standard patterns for Go HTTP services 
 - **Embedded HTML templates** via Go's `embed` package — self-contained binary
 - **Multi-stage Dockerfile** — small Alpine-based image, non-root user (numeric UID for `runAsNonRoot`)
 - **Firestore persistence** — data stored in and fetched from Cloud Firestore
-- **Helm chart** for Kubernetes manifests (Deployment, Service, ServiceAccount) with per-environment values files
+- **Helm chart** for Kubernetes manifests (Deployment, NodePort Service, ServiceAccount, Ingress, ManagedCertificate, FrontendConfig) with per-environment values files
 - **Cloud Deploy** for progressive delivery to GKE clusters using Skaffold + Helm deployer
-- **Terraform** infrastructure-as-code for GKE, Artifact Registry, Cloud Deploy, Firestore, IAM, static IP, DNS, and GCP APIs
+- **Terraform** infrastructure-as-code for GKE, Artifact Registry, Cloud Deploy, Firestore, IAM, global static IP, DNS, and GCP APIs
 - **GitHub Actions** CI/CD pipeline: test, build, push to Artifact Registry, Terraform apply, Helm values injection, and Cloud Deploy release creation
-- **Static IP** reserved via Terraform, used for the GKE LoadBalancer Service and DNS A record
+- **GKE Ingress with HTTPS** — NodePort Service + Ingress with Google-managed SSL certificate and HTTP-to-HTTPS redirect
+- **Global static IP** reserved via Terraform, referenced by name in the Ingress annotation and used in the DNS A record
 - **Multi-environment** deployment: `stage` branch → staging, `main` branch → production
 - **Path-filtered triggers** — deploy only runs when app, infra, or Helm files change; manual `workflow_dispatch` for on-demand deploys
 - **Separate GCP projects** and service accounts per environment
@@ -85,12 +86,15 @@ Create a new empty directory for the application and generate all files followin
 ├── helm/
 │   ├── Chart.yaml                     # Helm chart metadata
 │   ├── values.yaml                    # Default values (shared across environments)
-│   ├── values-staging.yaml            # Staging environment overrides
-│   ├── values-production.yaml         # Production environment overrides
+│   ├── values-staging.yaml            # Staging environment overrides (incl. ingress domain, static IP name)
+│   ├── values-production.yaml         # Production environment overrides (incl. ingress domain, static IP name)
 │   └── templates/
 │       ├── deployment.yaml            # Helm-templated Deployment
-│       ├── service.yaml               # Helm-templated LoadBalancer Service (with static IP)
-│       └── service-account.yaml       # Helm-templated K8s SA with Workload Identity annotation
+│       ├── service.yaml               # NodePort Service (traffic routed through Ingress)
+│       ├── service-account.yaml       # Helm-templated K8s SA with Workload Identity annotation
+│       ├── ingress.yaml               # GKE Ingress with global static IP and managed SSL cert
+│       ├── managed-certificate.yaml   # Google-managed SSL certificate for the custom domain
+│       └── frontend-config.yaml       # HTTP-to-HTTPS redirect configuration
 ├── scripts/
 │   └── destroy.sh                     # Tears down all cloud infrastructure for an environment
 ├── terraform/
@@ -99,12 +103,12 @@ Create a new empty directory for the application and generate all files followin
 │   ├── versions.tf                    # Terraform >= 1.0, google ~> 5.0
 │   ├── gke.tf                         # GKE Autopilot cluster (deletion_protection = false)
 │   ├── iam.tf                         # Runtime SA + Workload Identity binding
-│   ├── dns.tf                         # Static IP (google_compute_address) + DNS A record
+│   ├── dns.tf                         # Global static IP (google_compute_global_address) + DNS A record
 │   ├── firestore.tf                   # Firestore database + seed document
 │   ├── apis.tf                        # Enable required GCP APIs
 │   ├── artifact-registry.tf           # Artifact Registry Docker repo
 │   ├── clouddeploy.tf                 # Cloud Deploy pipeline + target + execution SA
-│   ├── outputs.tf                     # Terraform outputs (including gke_lb_ip)
+│   ├── outputs.tf                     # Terraform outputs (including gke_lb_ip, gke_lb_ip_name)
 │   ├── stage/
 │   │   ├── backend.tf                 # GCS backend for staging
 │   │   └── stage.tfvars               # Staging variable values
@@ -145,6 +149,9 @@ When generating each file, read the corresponding template source file to unders
 | `helm/templates/deployment.yaml` | `/home/ubuntu/git/gcp-clouddeploy-gke-template/helm/templates/deployment.yaml` |
 | `helm/templates/service.yaml` | `/home/ubuntu/git/gcp-clouddeploy-gke-template/helm/templates/service.yaml` |
 | `helm/templates/service-account.yaml` | `/home/ubuntu/git/gcp-clouddeploy-gke-template/helm/templates/service-account.yaml` |
+| `helm/templates/ingress.yaml` | `/home/ubuntu/git/gcp-clouddeploy-gke-template/helm/templates/ingress.yaml` |
+| `helm/templates/managed-certificate.yaml` | `/home/ubuntu/git/gcp-clouddeploy-gke-template/helm/templates/managed-certificate.yaml` |
+| `helm/templates/frontend-config.yaml` | `/home/ubuntu/git/gcp-clouddeploy-gke-template/helm/templates/frontend-config.yaml` |
 | `skaffold.yaml` | `/home/ubuntu/git/gcp-clouddeploy-gke-template/skaffold.yaml` |
 | `terraform/*.tf` | `/home/ubuntu/git/gcp-clouddeploy-gke-template/terraform/*.tf` |
 | `.github/workflows/main.yml` | `/home/ubuntu/git/gcp-clouddeploy-gke-template/.github/workflows/main.yml` |
@@ -164,7 +171,7 @@ Replace template-specific values with the new application's values:
 | `"Hello World!"` greeting and `/api/hello` endpoint | The new application's actual API endpoints and business logic |
 | `greetings/hello` Firestore document | The new application's Firestore collection/document structure |
 | Template UI (gradient text, particles) | The new application's UI design |
-| `helm/values-staging.yaml` and `helm/values-production.yaml` | Environment-specific values (project IDs, SA names, SA emails) for the new app |
+| `helm/values-staging.yaml` and `helm/values-production.yaml` | Environment-specific values (project IDs, SA names, SA emails, ingress domain, static IP name) for the new app |
 
 ---
 
@@ -239,7 +246,9 @@ Each service gets DNS names under `demo.devops-for-hire.com`:
 | Staging | `<app-name>.stage.demo.devops-for-hire.com` |
 | Production | `<app-name>.demo.devops-for-hire.com` |
 
-DNS A records are managed by Terraform (`dns.tf`), pointing to a **static IP** reserved by Terraform (`google_compute_address`). The static IP is assigned to the Kubernetes LoadBalancer Service via `loadBalancerIP` in the Helm service template. This ensures the DNS record and the LoadBalancer always use the same IP, even across redeployments.
+DNS A records are managed by Terraform (`dns.tf`), pointing to a **global static IP** reserved by Terraform (`google_compute_global_address`). The static IP is referenced by **name** (not address) in the GKE Ingress annotation (`kubernetes.io/ingress.global-static-ip-name`). A Google-managed SSL certificate auto-provisions HTTPS, and a FrontendConfig redirects HTTP to HTTPS. This ensures stable DNS, automatic TLS, and HTTPS-by-default across redeployments.
+
+**IMPORTANT:** GKE Ingress requires a **global** static IP, not a regional one. The Ingress references the IP by resource name, not by address value.
 
 ---
 
@@ -306,20 +315,19 @@ The application uses a Helm chart (`helm/`) instead of raw Kubernetes manifests.
 | File | Purpose | Managed By |
 |------|---------|------------|
 | `helm/values.yaml` | Default values (replicas, ports, probes, resources) | Committed in repo |
-| `helm/values-staging.yaml` | Staging overrides (project ID, SA names, SA emails) | Committed in repo |
-| `helm/values-production.yaml` | Production overrides (project ID, SA names, SA emails) | Committed in repo |
-| `helm/values-dynamic.yaml` | Dynamic values (app version, static IP) | Generated by CI at build time |
+| `helm/values-staging.yaml` | Staging overrides (project ID, SA names, SA emails, ingress domain/IP name) | Committed in repo |
+| `helm/values-production.yaml` | Production overrides (project ID, SA names, SA emails, ingress domain/IP name) | Committed in repo |
+| `helm/values-dynamic.yaml` | Dynamic values (app version only) | Generated by CI at build time |
 
 ### Dynamic Values
 
-Only two values are injected at CI time (written to `helm/values-dynamic.yaml`):
+Only one value is injected at CI time (written to `helm/values-dynamic.yaml`):
 
 | Value | Source |
 |-------|--------|
 | `app.version` | Computed from `VERSION` file + commit count |
-| `service.staticIP` | Terraform output `gke_lb_ip` |
 
-All other values (environment, project ID, SA names, SA emails) are pre-committed in per-environment values files.
+The static IP is referenced by **name** (not address) in the Ingress annotation, and that name is committed in the per-environment values files. All other values (environment, project ID, SA names, SA emails, ingress domain, static IP name) are pre-committed in per-environment values files.
 
 ### Image Substitution
 
@@ -356,7 +364,7 @@ The service reads these environment variables at startup:
 
 | Trigger | What Runs |
 |---------|-----------|
-| Push to `main`/`stage` changing `service/`, `helm/`, `terraform/`, `skaffold.yaml`, `Dockerfile`, or `VERSION` | Full pipeline: test → build → deploy |
+| Push to `main`/`stage` changing `service/`, `helm/`, `terraform/`, `skaffold.yaml`, or `VERSION` | Full pipeline: test → build → deploy |
 | Push to `main`/`stage` changing only `scripts/`, `*.md`, `.github/workflows/`, etc. | **Nothing** (no workflow triggered) |
 | Pull request to `main`/`stage` | Test job only (no build or deployment) |
 | Manual **workflow_dispatch** (GitHub Actions UI → "Run workflow") | Full pipeline: test → build → deploy (with environment selector) |
@@ -367,10 +375,10 @@ The service reads these environment variables at startup:
 git push (matching paths) → GitHub Actions:
   1. test (Go test, vet, lint)
   2. build-and-deploy:
-     a. Terraform apply (GKE, Cloud Deploy, static IP, DNS, etc.)
+     a. Terraform apply (GKE, Cloud Deploy, global static IP, DNS, etc.)
      b. Docker build + push to Artifact Registry
-     c. Generate helm/values-dynamic.yaml (version + static IP)
-     d. Create Cloud Deploy release (Skaffold + Helm render → deploy to GKE)
+     c. Generate helm/values-dynamic.yaml (version only)
+     d. Create Cloud Deploy release with --source=. (Skaffold + Helm render → deploy to GKE)
      e. Wait for rollout + smoke test
 ```
 
@@ -410,11 +418,11 @@ Use the destroy script to tear down all cloud resources for an environment:
 ```
 
 The script performs these steps in order:
-1. Deletes Kubernetes workloads (deployment, service, service-account) via kubectl
+1. Deletes Kubernetes workloads (deployment, service, service-account, ingress, managed-certificate, frontend-config) via kubectl
 2. Deletes Cloud Deploy releases, delivery pipeline, and target
 3. Cleans Cloud Deploy artifact buckets in GCS
 4. Deletes all Artifact Registry images
-5. Runs `terraform destroy` (GKE cluster, Firestore, static IP, DNS, SAs, IAM bindings)
+5. Runs `terraform destroy` (GKE cluster, Firestore, global static IP, DNS, SAs, IAM bindings)
 6. Cleans Cloud Build logs and Cloud Deploy source staging buckets
 
 The script requires interactive confirmation, is idempotent, and preserves the Terraform state bucket and GCP projects.
@@ -428,7 +436,7 @@ service/                → Go application code
 service/internal/       → Private packages (config, server, store, templates)
 service/Dockerfile      → Multi-stage Docker build (non-root, numeric UID)
 helm/                   → Helm chart (Chart.yaml, values files, templates)
-helm/templates/         → Kubernetes manifest templates (deployment, service, service-account)
+helm/templates/         → Kubernetes manifest templates (deployment, service, service-account, ingress, managed-certificate, frontend-config)
 helm/values-*.yaml      → Per-environment values (staging, production, dynamic)
 skaffold.yaml           → Skaffold config with Helm deployer + environment profiles
 scripts/                → Operational scripts (destroy.sh)

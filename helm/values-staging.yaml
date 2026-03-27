@@ -7,3 +7,11 @@ app:
 serviceAccount:
   name: gcp-clouddeploy-gke-template-stage
   gcpServiceAccount: gke-tpl-staging@dfh-stage-id.iam.gserviceaccount.com
+
+# Ingress: domain and static IP name for staging.
+# staticIPName must match the Terraform google_compute_global_address resource name
+# (defined in dns.tf as "${var.service_name}-lb-ip").
+ingress:
+  enabled: true
+  domain: gcp-clouddeploy-gke-template.stage.demo.devops-for-hire.com
+  staticIPName: gcp-clouddeploy-gke-template-stage-lb-ip

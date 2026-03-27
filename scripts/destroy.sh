@@ -14,7 +14,7 @@
 #   - The Terraform backend bucket must be accessible
 #
 # What this script destroys:
-#   1. Kubernetes workloads (deployment, service, service-account) via kubectl
+#   1. Kubernetes workloads (deployment, service, service-account, ingress, managed-certificate, frontend-config) via kubectl
 #   2. Cloud Deploy delivery pipeline, target, and release artifacts
 #   3. All Terraform-managed resources via terraform destroy:
 #      - GKE Autopilot cluster
@@ -22,7 +22,7 @@
 #      - Firestore database and seed document
 #      - Cloud Deploy pipeline, target, execution SA, and IAM bindings
 #      - Runtime SA, IAM bindings, and Workload Identity binding
-#      - Static IP (google_compute_address)
+#      - Global static IP (google_compute_global_address)
 #      - DNS A record (cross-project)
 #      - GCP API enablements
 #   4. Cloud Deploy artifacts in GCS bucket
@@ -101,6 +101,10 @@ if gcloud container clusters describe "${CLUSTER_NAME}" --region="${REGION}" --p
   kubectl delete deployment gcp-clouddeploy-gke-template --ignore-not-found 2>/dev/null || true
   kubectl delete service gcp-clouddeploy-gke-template --ignore-not-found 2>/dev/null || true
   kubectl delete serviceaccount "${SERVICE_NAME}" --ignore-not-found 2>/dev/null || true
+  # Delete Ingress and related resources (managed certificate, frontend config)
+  kubectl delete ingress gcp-clouddeploy-gke-template --ignore-not-found 2>/dev/null || true
+  kubectl delete managedcertificate gcp-clouddeploy-gke-template-cert --ignore-not-found 2>/dev/null || true
+  kubectl delete frontendconfig gcp-clouddeploy-gke-template-frontend-config --ignore-not-found 2>/dev/null || true
   log "Kubernetes workloads deleted."
 else
   warn "GKE cluster ${CLUSTER_NAME} not found — skipping K8s cleanup."
@@ -230,7 +234,7 @@ echo -e "  ${GREEN}DESTROY COMPLETE: ${ENV} environment${NC}"
 echo "=============================================="
 echo ""
 echo "The following resources have been destroyed:"
-echo "  - Kubernetes workloads (deployment, service, service-account)"
+echo "  - Kubernetes workloads (deployment, service, service-account, ingress, managed-certificate, frontend-config)"
 echo "  - Cloud Deploy pipeline, target, and releases"
 echo "  - GKE Autopilot cluster: ${CLUSTER_NAME}"
 echo "  - Artifact Registry repository: ${AR_REPO}"

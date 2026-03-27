@@ -1,0 +1,27 @@
+# GKE Ingress — routes external HTTPS traffic to the NodePort Service.
+#
+# Key annotations:
+#   - kubernetes.io/ingress.global-static-ip-name: binds the Ingress to a Terraform-managed
+#     global static IP (google_compute_global_address). The value is the IP resource NAME,
+#     not the IP address itself.
+#   - networking.gke.io/managed-certificates: references the ManagedCertificate resource
+#     that provisions a Google-managed SSL certificate for the custom domain.
+#   - networking.gke.io/v1beta1.FrontendConfig: references the FrontendConfig resource
+#     that enables HTTP-to-HTTPS redirect.
+#
+# This Ingress uses a defaultBackend (not path-based rules) because the service
+# handles all routing internally.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gcp-clouddeploy-gke-template
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: {{ .Values.ingress.staticIPName }}
+    networking.gke.io/managed-certificates: gcp-clouddeploy-gke-template-cert
+    networking.gke.io/v1beta1.FrontendConfig: gcp-clouddeploy-gke-template-frontend-config
+spec:
+  defaultBackend:
+    service:
+      name: gcp-clouddeploy-gke-template
+      port:
+        number: 80

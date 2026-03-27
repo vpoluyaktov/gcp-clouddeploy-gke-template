@@ -1,0 +1,16 @@
+# Google-managed SSL certificate for the custom domain.
+#
+# GKE automatically provisions and renews this certificate via Let's Encrypt.
+# IMPORTANT: Certificate provisioning can take up to 60 minutes on the first deploy.
+# The domain's DNS A record must already point to the Ingress static IP for
+# certificate validation to succeed (Terraform creates both the IP and DNS record).
+#
+# The certificate name is referenced in the Ingress annotation:
+#   networking.gke.io/managed-certificates
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: gcp-clouddeploy-gke-template-cert
+spec:
+  domains:
+    - {{ .Values.ingress.domain }}

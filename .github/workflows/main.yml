@@ -9,7 +9,6 @@ on:
       - 'helm/**'
       - 'terraform/**'
       - 'skaffold.yaml'
-      - 'Dockerfile'
       - 'VERSION'
   pull_request:
     branches: [ main, stage ]
@@ -102,10 +101,21 @@ jobs:
           echo "PROJECT_ID=dfh-stage-id" >> $GITHUB_OUTPUT
         fi
 
-    - name: Authenticate to Google Cloud
+    # IMPORTANT: Auth is split into two conditional steps instead of using a ternary expression.
+    # The GitHub Actions expression '${{ A && B || C }}' is NOT a true ternary — if B is falsy
+    # (e.g., the secret is empty), it falls through to C. This could cause staging to
+    # authenticate with the production key if the staging secret is missing.
+    - name: Authenticate to Google Cloud (staging)
+      if: steps.env.outputs.ENV_NAME == 'stage'
       uses: google-github-actions/auth@v2
       with:
-        credentials_json: ${{ steps.env.outputs.ENV_NAME == 'prod' && secrets.GCP_PROD_SA_KEY || secrets.GCP_STAGE_SA_KEY }}
+        credentials_json: ${{ secrets.GCP_STAGE_SA_KEY }}
+
+    - name: Authenticate to Google Cloud (production)
+      if: steps.env.outputs.ENV_NAME == 'prod'
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_PROD_SA_KEY }}
 
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
@@ -133,7 +143,6 @@ jobs:
         terraform init
         terraform plan -var-file="${{ steps.env.outputs.VAR_FILE }}" -var="image_tag=v${{ steps.version.outputs.VERSION }}"
         terraform apply -var-file="${{ steps.env.outputs.VAR_FILE }}" -var="image_tag=v${{ steps.version.outputs.VERSION }}" -auto-approve
-        echo "STATIC_IP=$(terraform output -raw gke_lb_ip)" >> $GITHUB_OUTPUT
 
     - name: Configure Docker for Artifact Registry
       run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
@@ -150,11 +159,13 @@ jobs:
         docker push us-central1-docker.pkg.dev/${{ steps.env.outputs.PROJECT_ID }}/gcp-clouddeploy-gke-template/gcp-clouddeploy-gke-template:v${{ steps.version.outputs.VERSION }}
         docker push us-central1-docker.pkg.dev/${{ steps.env.outputs.PROJECT_ID }}/gcp-clouddeploy-gke-template/gcp-clouddeploy-gke-template:latest
 
+    # Only the app version is injected dynamically at CI time.
+    # The static IP is referenced by NAME (not address) in the Ingress annotation,
+    # and that name is already committed in the per-environment values files.
     - name: Inject dynamic Helm values
       run: |
         VERSION=v${{ steps.version.outputs.VERSION }}
-        STATIC_IP=${{ steps.terraform.outputs.STATIC_IP }}
-        printf 'app:\n  version: "%s"\nservice:\n  staticIP: "%s"\n' "${VERSION}" "${STATIC_IP}" > helm/values-dynamic.yaml
+        printf 'app:\n  version: "%s"\n' "${VERSION}" > helm/values-dynamic.yaml
         cat helm/values-dynamic.yaml
 
     - name: Create Cloud Deploy release
@@ -168,29 +179,36 @@ jobs:
         SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
         RELEASE_NAME="rel-${VERSION//./-}-${SHORT_SHA}"
 
+        # --source=. is required to upload the Helm chart and values files
+        # for Cloud Deploy to render via Skaffold.
         gcloud deploy releases create ${RELEASE_NAME} \
           --project=${PROJECT_ID} \
           --region=us-central1 \
           --delivery-pipeline=${PIPELINE_NAME} \
           --skaffold-file=skaffold.yaml \
+          --source=. \
           --images=gcp-clouddeploy-gke-template=${IMAGE}
 
     - name: Wait for rollout and smoke test
       run: |
         echo "Cloud Deploy release created. Waiting for rollout..."
-        sleep 30
+        # Ingress + managed certificate provisioning takes longer than a simple LoadBalancer
+        sleep 60
         PROJECT_ID=${{ steps.env.outputs.PROJECT_ID }}
         ENV_NAME=${{ steps.env.outputs.ENV_NAME }}
         CLUSTER_NAME=gcp-clouddeploy-gke-tpl-${ENV_NAME}
+        # Install the GKE auth plugin (required for kubectl access to GKE clusters)
+        sudo apt-get install -y google-cloud-sdk-gke-gcloud-auth-plugin 2>/dev/null || true
         gcloud container clusters get-credentials ${CLUSTER_NAME} --region=us-central1 --project=${PROJECT_ID}
         kubectl rollout status deployment/gcp-clouddeploy-gke-template --timeout=300s || true
-        EXTERNAL_IP=$(kubectl get svc gcp-clouddeploy-gke-template -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-        if [ -n "$EXTERNAL_IP" ]; then
-          echo "Service available at http://$EXTERNAL_IP"
-          curl -f http://$EXTERNAL_IP/health || echo "Health check not yet available (LoadBalancer may still be provisioning)"
+        # Smoke test uses HTTPS via the custom domain (routed through Ingress)
+        if [ "$ENV_NAME" == "prod" ]; then
+          DOMAIN="gcp-clouddeploy-gke-template.demo.devops-for-hire.com"
         else
-          echo "LoadBalancer IP not yet assigned — service is deploying"
+          DOMAIN="gcp-clouddeploy-gke-template.stage.demo.devops-for-hire.com"
         fi
+        echo "Service available at https://$DOMAIN"
+        curl -f --max-time 10 https://$DOMAIN/health || echo "HTTPS health check not yet available (certificate may still be provisioning — this is expected for up to 60 minutes after first deploy)"
 
     - name: Notify deployment
       if: always()

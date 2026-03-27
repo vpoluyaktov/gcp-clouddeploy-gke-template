@@ -3,11 +3,20 @@
 
 replicaCount: 2
 
+# Service uses NodePort because traffic is routed through a GKE Ingress (not a LoadBalancer).
+# The Ingress handles external traffic, SSL termination, and HTTP-to-HTTPS redirect.
 service:
-  type: LoadBalancer
+  type: NodePort
   port: 80
   targetPort: 8080
-  staticIP: ""
+
+# Ingress configuration for HTTPS access via Google-managed SSL certificates.
+# The static IP name and domain are set per environment in values-<env>.yaml.
+# IMPORTANT: The staticIPName must match the Terraform google_compute_global_address resource name.
+ingress:
+  enabled: true
+  domain: ""
+  staticIPName: ""
 
 serviceAccount:
   name: gcp-clouddeploy-gke-template

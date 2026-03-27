@@ -7,3 +7,11 @@ app:
 serviceAccount:
   name: gcp-clouddeploy-gke-template-prod
   gcpServiceAccount: gke-tpl-production@dfh-prod-id.iam.gserviceaccount.com
+
+# Ingress: domain and static IP name for production.
+# staticIPName must match the Terraform google_compute_global_address resource name
+# (defined in dns.tf as "${var.service_name}-lb-ip").
+ingress:
+  enabled: true
+  domain: gcp-clouddeploy-gke-template.demo.devops-for-hire.com
+  staticIPName: gcp-clouddeploy-gke-template-prod-lb-ip
